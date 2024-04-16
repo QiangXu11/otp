@@ -149,7 +149,7 @@ static Eterm* collect_live_heap_frags(Process* p, ErlHeapFragment *live_hf_end,
 static int adjust_after_fullsweep(Process *p, int need, Eterm *objv, int nobj);
 static void shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj);
 static void grow_new_heap(Process *p, Uint new_sz, Eterm* objv, int nobj);
-static void sweep_off_heap(Process *p, int fullsweep);
+static void sweep_off_heap(Process *p, int fullsweep, Sint heap_offs, Eterm* prev_old_heap, Uint old_heap_sz);
 static void offset_heap(Eterm* hp, Uint sz, Sint offs, char* area, Uint area_sz);
 static void offset_stack(Eterm *stack, Uint sz,
                          Sint heap_offset, Sint stack_offset,
@@ -689,6 +689,7 @@ garbage_collect(Process* p, ErlHeapFragment *live_hf_end,
 		Uint need, Eterm* objv, int nobj, int fcalls,
 		Uint max_young_gen_usage)
 {
+    
     Uint reclaimed_now = 0;
     Uint ygen_usage;
     Uint ext_msg_usage = 0;
@@ -1769,7 +1770,7 @@ do_minor(Process *p, ErlHeapFragment *live_hf_end,
     HIGH_WATER(p) = n_htop;
 
     if (MSO(p).first || p->wrt_bins) {
-	sweep_off_heap(p, 0);
+	sweep_off_heap(p, 0, 0, NULL,0);
     }
 
 #ifdef HARDDEBUG
@@ -1817,7 +1818,7 @@ struct Rootnode{
 };
 
 //link Rootnode
-static void pushroot(struct Rootnode** head_ref, Eterm* new_data) {
+static void pushroot(struct Rootnode** head_ref, struct Rootnode** end_ref, Eterm* new_data) {
   
     // allocate node 
     struct Rootnode* new_node 
@@ -1831,11 +1832,15 @@ static void pushroot(struct Rootnode** head_ref, Eterm* new_data) {
   
     // move the head to point to the new node 
     (*head_ref) = new_node; 
+
+     if (*end_ref == NULL) {
+        (*end_ref) = new_node;
+    }
     
 
 }
 
-static void appendNode(struct Rootnode ** end_ref, Eterm* new_data){
+static void appendNode(struct Rootnode ** head_ref, struct Rootnode ** end_ref, Eterm* new_data){
 
     struct Rootnode* new_node 
         = (struct Rootnode*)malloc(sizeof(struct Rootnode)); 
@@ -1845,7 +1850,12 @@ static void appendNode(struct Rootnode ** end_ref, Eterm* new_data){
     new_node->next = NULL;
 
     //put the new_node in the end of the list
-    if (*end_ref == NULL) {
+
+    if (*head_ref == NULL) {
+        
+        *head_ref = new_node;
+        *end_ref = new_node;
+    } if(*end_ref == NULL){
         *end_ref = new_node;
     } else {
         (*end_ref)->next = new_node;
@@ -1874,7 +1884,7 @@ static void findRootEnd(struct Rootnode** head_ref, struct Rootnode** end_ref){
 }
 
 
-
+/*
 // check_cell function check the cell points to what
 static void check_cell(Eterm* cell_ptr, char* oh, Uint oh_size, struct Rootnode** rootend, struct Rootnode** youngend){
     Eterm val;
@@ -1892,8 +1902,8 @@ static void check_cell(Eterm* cell_ptr, char* oh, Uint oh_size, struct Rootnode*
                 //2 check if object is marked
                 //the node is added to the linked list only if is in the old heap and it is not marked
                 if(ErtsInArea(ptr,oh,oh_size) ){
-                    appendNode(rootend,cell_ptr);
-                    
+                    //appendNode(rootend,cell_ptr);
+                    appendNode(rootend,ptr);
                 }else if(!erts_is_literal(val,ptr)){
                     appendNode(youngend,ptr);
                 }
@@ -1906,7 +1916,8 @@ static void check_cell(Eterm* cell_ptr, char* oh, Uint oh_size, struct Rootnode*
                 
 
                 if(ErtsInArea(ptr,oh,oh_size) ){//the pointer is NOT in the old heap
-                    appendNode(rootend,cell_ptr);
+                    //appendNode(rootend,cell_ptr);
+                    appendNode(rootend,ptr);
                     
                 }else if(!erts_is_literal(val,ptr)){
 
@@ -1932,7 +1943,8 @@ static void check_cell(Eterm* cell_ptr, char* oh, Uint oh_size, struct Rootnode*
                 //2 check if object is marked
                 //the node is added to the linked list only if is in the old heap and it is not marked
                 if(ErtsInArea(ptr,oh,oh_size) ){
-                    appendNode(rootend,cell_ptr);
+                    // appendNode(rootend,cell_ptr);
+                    appendNode(rootend,ptr);
                     
                 }else if(!erts_is_literal(val,ptr)){
                     appendNode(youngend,ptr);
@@ -1946,7 +1958,8 @@ static void check_cell(Eterm* cell_ptr, char* oh, Uint oh_size, struct Rootnode*
                 
 
                 if(ErtsInArea(ptr,oh,oh_size) ){//the pointer is NOT in the old heap
-                    appendNode(rootend,cell_ptr);
+                    // appendNode(rootend,cell_ptr);
+                    appendNode(rootend,ptr);
                     
                 }else if(!erts_is_literal(val,ptr)){
 
@@ -1962,10 +1975,10 @@ static void check_cell(Eterm* cell_ptr, char* oh, Uint oh_size, struct Rootnode*
         
 
 }
-
+*/
 
 //check_tuple function checks the elements in the tuple, check any outgoing edge
-static void check_tuple(Eterm* hp_ptr, char *oh, Uint oh_size, Uint arity, struct Rootnode** rootend, struct Rootnode** youngend){
+static void check_tuple(Eterm* hp_ptr, char *oh, Uint oh_size, Uint arity, struct Rootnode** roothead, struct Rootnode** younghead, struct Rootnode** rootend, struct Rootnode** youngend){
     Eterm gval;
     Eterm* ptr;
     hp_ptr = hp_ptr + 1;
@@ -1978,10 +1991,12 @@ static void check_tuple(Eterm* hp_ptr, char *oh, Uint oh_size, Uint arity, struc
             case TAG_PRIMARY_BOXED: {//boxed type takes 1 word in the heap
                 ptr = boxed_val(gval);
                 if(ErtsInArea(ptr,oh,oh_size)){
-                    appendNode(rootend,hp_ptr);
+                    //appendNode(rootend,hp_ptr);
+                    appendNode(roothead, rootend,ptr);
+                    
                     
                 }else if(!erts_is_literal(gval, ptr)){
-                    appendNode(youngend,ptr);
+                    appendNode(younghead, youngend,ptr);
                 }             
                 hp_ptr = hp_ptr + 1;
                 break;
@@ -1994,11 +2009,12 @@ static void check_tuple(Eterm* hp_ptr, char *oh, Uint oh_size, Uint arity, struc
                 ptr = list_val(gval);//list_val is the address of the con
                 //check what the cell points to.
                 if(ErtsInArea(ptr,oh,oh_size)){
-                    appendNode(rootend,hp_ptr);
+                    // appendNode(rootend,hp_ptr);
+                    appendNode(roothead, rootend,ptr);
                 }else if(!erts_is_literal(gval, ptr)){
-                    appendNode(youngend,ptr);
+                    appendNode(younghead, youngend,ptr);
                 }
-                printf("list");
+                
                 
                 //NumNode = check_cell(ptr,oh,oh_size,rootend,NumNode);
                 hp_ptr = hp_ptr + 1;
@@ -2016,22 +2032,18 @@ static void check_tuple(Eterm* hp_ptr, char *oh, Uint oh_size, Uint arity, struc
     
 }
 
-static void check_young_heap(struct Rootnode** younghead, struct Rootnode** roothead, char* oh, Uint oh_size){
+static void check_young_heap(struct Rootnode** younghead, struct Rootnode** roothead, char* oh, Uint oh_size,
+                                struct Rootnode **rootend, struct Rootnode **youngend){
+  
     
-    struct Rootnode* head = *younghead;
-    struct Rootnode* end = NULL;
-    struct Rootnode* oldend = NULL;
     Eterm* hp_ptr;
     Eterm gval;
     Eterm* ptr;
+   
 
-    //find the end of the linked list
-    findRootEnd(younghead, &end);//young
-    findRootEnd(roothead,&oldend);
-
-    while (head != NULL) {
+    while ((*younghead) != NULL) {
         
-        hp_ptr = head -> ptr;
+        hp_ptr = (*younghead) -> ptr;
         gval = *hp_ptr;
         
         switch (primary_tag(gval)) {
@@ -2042,7 +2054,7 @@ static void check_young_heap(struct Rootnode** younghead, struct Rootnode** root
 
                     Uint arity = arityval(gval);
 
-                    check_tuple(hp_ptr, oh, oh_size, arity, &oldend, &end);
+                    check_tuple(hp_ptr, oh, oh_size, arity, roothead, younghead, rootend, youngend);
                 
                 } else {
                     if (header_is_bin_matchstate(gval)) {
@@ -2053,9 +2065,10 @@ static void check_young_heap(struct Rootnode** younghead, struct Rootnode** root
                         
                         if(ErtsInArea(ptr,oh,oh_size)){//the pointer is in the old heap
                             
-                            pushroot(roothead,hp_ptr);       
-                        }else if (!erts_is_literal(gval, ptr)){
-                            appendNode(&end,ptr);
+                            //pushroot(roothead,hp_ptr);   
+                            pushroot(roothead,rootend, ptr);    
+                        }else if (!erts_is_literal(*origptr, ptr)){
+                            appendNode(younghead, youngend,ptr);
                         }
                     }else{
                         //fun map 
@@ -2075,7 +2088,7 @@ static void check_young_heap(struct Rootnode** younghead, struct Rootnode** root
                             }
                                                 
                         hp_ptr= hp_ptr + arity;                       
-                        check_tuple(hp_ptr, oh, oh_size, nelts, &oldend, &end);
+                        check_tuple(hp_ptr, oh, oh_size, nelts, roothead, younghead, rootend, youngend);
                         
                     }
                     
@@ -2089,9 +2102,10 @@ static void check_young_heap(struct Rootnode** younghead, struct Rootnode** root
                     Eterm *carp = ptr_val(car);
                     if(ErtsInArea(carp,oh,oh_size)){//the pointer is in the old heap
                                 
-                        pushroot(roothead,hp_ptr);       
+                        //pushroot(roothead,hp_ptr);
+                        pushroot(roothead, rootend, carp);       
                     }else if (!erts_is_literal(gval, carp)){
-                        appendNode(&end,carp);
+                        appendNode(younghead, youngend,carp);
                     }
                 }
                 Eterm cdr = CDR(hp_ptr);
@@ -2100,15 +2114,16 @@ static void check_young_heap(struct Rootnode** younghead, struct Rootnode** root
                     Eterm *cdrp = ptr_val(cdr);
                     if(ErtsInArea(cdrp,oh,oh_size)){//the pointer is in the old heap
                                 
-                        pushroot(roothead,hp_ptr+1);       
+                        //pushroot(roothead,hp_ptr+1);    
+                        pushroot(roothead, rootend, cdrp);   
                     }else if (!erts_is_literal(gval, cdrp)){
-                        appendNode(&end,cdrp);
+                        appendNode(younghead, youngend,cdrp);
                     }
                 }
                 break;
             }
         }
-        head = head->next;
+        (*younghead) = (*younghead)->next;
     }
 }
 
@@ -2162,7 +2177,9 @@ static void check_young_heap(struct Rootnode** younghead, struct Rootnode** root
 
 // }
 
-static void findroot(Process *p, ErlHeapFragment *live_hf_end, Eterm* objv, int nobj, struct Rootnode **roothead, struct Rootnode **concellHead){
+static void findroot(Process *p, ErlHeapFragment *live_hf_end, Eterm* objv, int nobj, 
+                    struct Rootnode **roothead, struct Rootnode **younghead,
+                    struct Rootnode **rootend, struct Rootnode **youngend){
 
     //mark the reachable objects in the old heap
 
@@ -2178,21 +2195,10 @@ static void findroot(Process *p, ErlHeapFragment *live_hf_end, Eterm* objv, int 
     Eterm gval;
     Eterm* ptr;
 
-
-    struct Rootnode* younghead = NULL; 
-
-    struct Rootnode* listhead = NULL;
-    
-
     n = setup_rootset(p, objv, nobj, &rootset);
-
-   
         
 /****************************************************************/
-
-
     roots = rootset.roots;
-
     
     //in this while loop, the rootset is travered, add old heap pointer into the linkedlist.
 
@@ -2217,11 +2223,12 @@ static void findroot(Process *p, ErlHeapFragment *live_hf_end, Eterm* objv, int 
                     
                     if(ErtsInArea(ptr,oh,oh_size)){//the pointer is in the old heap
                         
-                        pushroot(roothead, g_ptr);
+                        //pushroot(roothead, g_ptr);
+                        pushroot(roothead,rootend, ptr);
                         
                         break;
                     }else if( !erts_is_literal(gval, ptr)){
-                        pushroot(&younghead,ptr);
+                        pushroot(younghead,youngend, ptr);
                         break;
                     }else{
                         break;
@@ -2235,11 +2242,12 @@ static void findroot(Process *p, ErlHeapFragment *live_hf_end, Eterm* objv, int 
                     
                     if(ErtsInArea(ptr,oh,oh_size) ){//the pointer is in the old heap
                         
-                        pushroot(roothead, g_ptr);
+                        //pushroot(roothead, g_ptr);
+                        pushroot(roothead, rootend, ptr);
                         
                         break;
                     }else if( !erts_is_literal(gval, ptr)){
-                        pushroot(&younghead,ptr);
+                        pushroot(younghead,youngend, ptr);
                         //pushroot(&listhead,ptr);
                         break;
                     }else{
@@ -2255,8 +2263,10 @@ static void findroot(Process *p, ErlHeapFragment *live_hf_end, Eterm* objv, int 
     }
     cleanup_rootset(&rootset);
 
+    //findRootEnd(roothead, rootend);
+    //findRootEnd(younghead, youngend);
     //check the young heap
-    check_young_heap(&younghead, roothead, oh, oh_size);
+    check_young_heap(younghead, roothead, oh, oh_size, rootend, youngend);
 
     //check_list_stack(&listhead, concellHead, oh, oh_size );
     
@@ -2356,16 +2366,17 @@ static void setbitmap(Uint* bitmap, Uint startIndex, Uint len){
     Uint end_bit = (startIndex + len - 1) % bits_per_word;
 
     if(start_word == end_word){
-        bitmap[start_word] |= ((1<<len)-1)<<start_bit;
+        bitmap[start_word] |= (((Uint)1<<len)-1)<<start_bit; //(Uint)1 ensures that 1 is treated as an unsigned integer and 64-bits
+
     }else{
         //change the start_word
-        bitmap[start_word] |= ((1<<(bits_per_word - start_bit))-1) << start_bit;
+        bitmap[start_word] |= (((Uint)1<<(bits_per_word - start_bit))-1) << start_bit;
         //change the middle words
         for(Uint i=start_word+1;i<end_word;i++){
-            bitmap[i] |=~0;
+            bitmap[i] |=(Uint)-1;
         }
         //change the end_word
-        bitmap[end_word] |= (1<<(end_bit+1))-1;
+        bitmap[end_word] |= ((Uint)1<<(end_bit+1))-1;
     }
 
     
@@ -2421,104 +2432,517 @@ static Uint live_size(Uint* bitmap, Uint NumElem){
 
 // }
 
-
-
-
-static int major_collection(Process* p, ErlHeapFragment *live_hf_end,
-		 Uint need, Eterm* objv, int nobj,
-		 Uint ygen_usage, Uint *recl)
-#ifdef DEBUG
-// new code
-
-{
-
-     /************************************/
-    
-    char* oh = (char *) OLD_HEAP(p);
-    Uint oh_size = (char *) OLD_HTOP(p) - oh;//size in byte
-    Eterm* old_heap = OLD_HEAP(p);
-    Eterm* old_htop = OLD_HTOP(p);
-
-    //1 word is 8 bytes in 64-computer; 1 word is 4 bytes in 32-computer
-    //if the Eterm is 8 bytes, then the oh_size_in_word should be shifed right by 3 bits.(divided by 8)
-    Uint sizeOfWordInByte = sizeof(Eterm) < 8 ? 2 : 3;
-
-    //Uint oh_size_in_word = oh_size == 0 ? oh_size : (oh_size/sizeOfWordInByte);
-    //Uint oh_size_in_word = oh_size == 0 ? oh_size : (oh_size>>sizeOfWordInByte);
-    Uint remainder_size = oh_size > ((oh_size>>sizeOfWordInByte) << sizeOfWordInByte) ? 1 : 0;
-    Uint oh_size_in_word = oh_size == 0 ? oh_size : (oh_size>>sizeOfWordInByte) + remainder_size;
-    //create a bitmap, the length of the bitmap should be corresponded to the size of the used old heap
-    //all bits in the bitmap are initialize to 0;
-    Uint bits_per_word = (sizeof(Uint)<<sizeOfWordInByte);
-    Uint shift_bits = bits_per_word<64 ? 5:6;
-    Uint NumElem = (oh_size_in_word + bits_per_word - 1) >>shift_bits;
-    
-    
-    Uint* old_bitmap = (Uint *)calloc(NumElem,sizeof(Uint));
-    Uint* check_bitmap = (Uint *)calloc(NumElem,sizeof(Uint));
-
-    //the distance of the object from the heap in the old heap
-    Uint dist=0;
-    //the number of terms
-    Uint numOfTerm;
-
-    Eterm gval;
-    Eterm* ptr;
-    Eterm* hp_ptr;
-
-    //Uint numberofZeros;
-    Uint size_before, size_after, stack_size;
-    Eterm* n_heap;
-    Eterm* n_htop;
-    Uint arity;
-    
-    
-    Uint new_sz;
-    int adjusted;
-
-    struct Rootnode* roothead = NULL;
-    struct Rootnode* rootend = NULL;
-
-    struct Rootnode* youngend = NULL;//this is using in the check_tuple function, but not in use.
-    //NumNode is the number of the node in the linkedlist.
-    struct Rootnode* concellHead = NULL;
-    
-    findroot(p, live_hf_end, objv, nobj, &roothead, &concellHead);
-    
-    
-    //find the end of the linked list
-    findRootEnd(&roothead, &rootend);
-    
-    
-    while(roothead != NULL){
+// this function expand the old heap 
+static  void expand_old_heap(Process* p, Eterm* objv, int nobj , Uint mature_size){
 
         
-        hp_ptr = roothead -> ptr;
+        Eterm* new_old_heap;
+        Sint heap_offs;
+        char* area;
+        Uint area_size;
+        Eterm* prev_heap = OLD_HEAP(p);//heap start pointer
+        Uint oh_size_before = (OLD_HEND(p) - OLD_HEAP(p));
+        Uint used_heap = OLD_HTOP(p) - OLD_HEAP(p);
+
+        ASSERT(mature_size > OLD_HEND(p)-OLD_HTOP(p));
+
+        //oh_size_after is the size of the old_heap after expanding
+        Uint oh_size_after = erts_next_heap_size(oh_size_before, 1);
+        Uint increased_size = oh_size_after - oh_size_before;
+        //remaining space in the old heap after increasing the old heap size
+        Uint remaining_size = increased_size + (OLD_HEND(p) - OLD_HTOP(p));
+
+        while(remaining_size < mature_size){
+            //if branch: the young objects may not fit into the old heap
+            //then increase the old_heap size again
+            oh_size_after = erts_next_heap_size(oh_size_after, 1);
+
+            increased_size = oh_size_after - oh_size_before;
+            //remaining space in the old heap after increasing the old heap size
+            remaining_size = increased_size + (OLD_HEND(p) - OLD_HTOP(p));
+             
+        }
+        //should we check MAX_HEAP_SIZE_GET(p)?
+
+        /* expand the old heap */
+        
+        ASSERT(oh_size_before < oh_size_after);
+        new_old_heap = ERTS_HEAP_REALLOC(ERTS_ALC_T_OLD_HEAP, prev_heap,
+                                 oh_size_before * sizeof(Eterm),
+                                 oh_size_after * sizeof(Eterm));
+
+        heap_offs = new_old_heap - prev_heap;
+
+        area = (char *) prev_heap;
+        area_size = used_heap * sizeof(Eterm);
+        //update the new heap pointer
+        p -> old_heap = new_old_heap;
+        p -> old_hend = new_old_heap + oh_size_after;
+        p -> old_htop = new_old_heap + used_heap;
+
+        
+        //check the offset
+        if(prev_heap == new_old_heap){
+            //if the heap start is unchanged
+            //should anything be done?
+
+        }else{
+            //heap start changed
+            //update the object's pointer in old heap
+            offset_heap(new_old_heap, used_heap, heap_offs, area, area_size);
+            
+            //update the object's pointer in the rootset
+            //the stack_off is zero, since there is not stack in the old heap
+            offset_rootset(p, heap_offs, 0,  area, area_size, objv, nobj);
+
+        }
+
+        
+        
+        
+
+        
+}
+
+
+static void move_young_mature(Process* p, Eterm* new_young_heap, Eterm* new_young_htop, Uint new_sz, ErlHeapFragment *live_hf_end, 
+                                    Eterm* objv, int nobj, char* mature, Uint mature_size, 
+                                    Eterm* prev_old_heap, Uint used_old_heap, struct Rootnode** head_ref, struct Rootnode** end_ref){
+
+    Rootset rootset;            /* Rootset for GC (stack, dictionary, etc). */
+    Roots* roots;
+    Eterm* n_htop = new_young_htop;
+    Uint n;
+    Eterm* ptr;
+    Eterm val;
+    Eterm gval;
+    Eterm* old_htop = p->old_htop;
+    Eterm* n_heap = new_young_heap;
+    char* oh = (char *) prev_old_heap;
+    Uint oh_size = used_old_heap*sizeof(Eterm);
+    
+    char* oh2 = (char *) p->old_heap;
+    Uint oh_size2 = (p->old_htop - p->old_heap)*sizeof(Eterm);
+    Sint heap_offs = p->old_heap - prev_old_heap;
+
+    Eterm* mature_start = p->old_htop;
+
+    //struct Rootnode* head = *head_ref;
+
+    VERBOSE(DEBUG_SHCOPY, ("[pid=%T] MINOR GC: %p %p %p %p\n", p->common.id,
+                           HEAP_START(p), HEAP_END(p), OLD_HEAP(p), OLD_HEND(p)));
+
+    // n_htop = n_heap = (Eterm*) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP,
+	// 				       sizeof(Eterm)*new_sz);
+
+    n = setup_rootset(p, objv, nobj, &rootset);
+    roots = rootset.roots;
+
+    /*
+     * All allocations done. Start defile heap with move markers.
+     * A crash dump due to allocation failure above will see a healthy heap.
+     */
+
+    if (live_hf_end != ERTS_INVALID_HFRAG_PTR) {
+	/*
+	 * Move heap frags that we know are completely live
+	 * directly into the new young heap generation.
+	 */
+	n_htop = collect_live_heap_frags(p, live_hf_end, n_htop);
+    }
+
+    while (n--) {
+        Eterm* g_ptr = roots->v;
+        Uint g_sz = roots->sz;
+
+	roots++;
+        for ( ; g_sz--; g_ptr++) {
+            gval = *g_ptr;
+
+        switch (primary_tag(gval)) {
+
+	    case TAG_PRIMARY_BOXED: {
+		    ptr = boxed_val(gval);
+            if(ErtsInYoungGen(gval, ptr, oh2, oh_size2)){
+                val = *ptr;
+                if (IS_MOVED_BOXED(val)) {
+                    ASSERT(is_boxed(val));
+                    *g_ptr = val;
+                }else if (ErtsInArea(ptr, mature, mature_size)){
+                    pushroot(head_ref,end_ref,old_htop);
+                    move_boxed(ptr,val,&old_htop,g_ptr);
+                    
+                }else{
+                    move_boxed(ptr,val,&n_htop,g_ptr);
+                }
+                break;
+            }else{
+                //in the new old_heap
+                break;
+            }
+           
+	    }
+
+	    case TAG_PRIMARY_LIST: {
+                ptr = list_val(gval);
+                if (ErtsInYoungGen(gval, ptr, oh2, oh_size2)){
+                    val = *ptr;
+                    if (IS_MOVED_CONS(val)) { /* Moved */
+                        *g_ptr = ptr[1];
+                    }else if(ErtsInArea(ptr, mature, mature_size)){
+                        pushroot(head_ref,end_ref,old_htop);
+                        move_cons(ptr,val,&old_htop,g_ptr);
+                        
+                    }else{
+                        move_cons(ptr,val,&n_htop,g_ptr);
+                    }
+                    break;
+                }else{
+                    break;
+                }
+	    }
+	    default:
+		break;
+            }
+        }
+    }
+
+    cleanup_rootset(&rootset);
+
+    /*
+     * Now all references in the rootset point to the new heap. However,
+     * most references on the new heap point to the old heap so the next stage
+     * is to scan through the new heap evacuating data from the old heap
+     * until all is changed.
+     */
+    
+
+    if (mature_size == 0) {
+	n_htop = sweep_new_heap(n_heap, n_htop, oh, oh_size);
+    } else {
+	Eterm* n_hp = n_heap;
+	Eterm* ptr;
+	Eterm val;
+	Eterm gval;
+
+	while (n_hp != n_htop) {
+	    ASSERT(n_hp < n_htop);
+	    gval = *n_hp;
+	    switch (primary_tag(gval)) {
+            case TAG_PRIMARY_BOXED: {
+                ptr = boxed_val(gval);
+                
+                if(ErtsInYoungGen(gval, ptr, oh, oh_size)){
+                    ASSERT(!ErtsInArea(ptr,oh2,oh_size2));
+                    val = *ptr;
+                    if (IS_MOVED_BOXED(val)) {
+                        ASSERT(is_boxed(val));
+                        *n_hp++ = val;
+                    } else if (ErtsInArea(ptr, mature, mature_size)) {
+                        pushroot(head_ref,end_ref,old_htop);
+                        move_boxed(ptr,val,&old_htop,n_hp++);
+                        
+                    } else{
+                        move_boxed(ptr,val,&n_htop,n_hp++);
+                    }
+                }else if(ErtsInArea(ptr, oh, oh_size) && !erts_is_literal(gval, ptr)){
+                    
+                    *n_hp = offset_ptr(gval, heap_offs);
+                    n_hp++;
+                } else{
+                    n_hp++;
+                }
+                break;
+            }
+
+            case TAG_PRIMARY_LIST: {
+                ptr = list_val(gval);
+                
+                if (ErtsInYoungGen(gval, ptr, oh, oh_size)) {
+                    ASSERT(!ErtsInArea(ptr,oh2,oh_size2));
+                    val = *ptr;
+                    if (IS_MOVED_CONS(val)) {
+                        *n_hp++ = ptr[1];
+                    } else if (ErtsInArea(ptr, mature, mature_size)) {
+                        pushroot(head_ref,end_ref,old_htop);
+                        move_cons(ptr,val,&old_htop,n_hp++);
+                        
+                    } else {
+                        move_cons(ptr,val,&n_htop,n_hp++);
+                    }
+                } else if(ErtsInArea(ptr, oh, oh_size) && !erts_is_literal(gval, ptr)){
+                    *n_hp = offset_ptr(gval, heap_offs);
+                    n_hp++;
+                } else{
+                    n_hp++;
+                }
+                break;
+            }
+	    case TAG_PRIMARY_HEADER: {
+		if (!header_is_thing(gval)){
+            n_hp++;
+            continue;
+        }  
+        // else {
+            /***************************************/
+          
+	      switch (thing_subtag(gval)) {
+	      case REF_SUBTAG:
+		  if (!is_magic_ref_thing(n_hp))
+		      break;
+	      case REFC_BINARY_SUBTAG:
+	      case FUN_SUBTAG:
+	      case EXTERNAL_PID_SUBTAG:
+	      case EXTERNAL_PORT_SUBTAG:
+	      case EXTERNAL_REF_SUBTAG:
+		  {
+		      struct erl_off_heap_header* ofh = (struct erl_off_heap_header*) n_hp;
+
+                      if (is_external_header(ofh->thing_word)) {
+                          erts_node_bookkeep(((ExternalThing*)ofh)->node,
+                                             make_boxed(((Eterm*)ofh)-heap_offs),
+                                             ERL_NODE_DEC, __FILE__, __LINE__);
+                          erts_node_bookkeep(((ExternalThing*)ofh)->node,
+                                             make_boxed((Eterm*)ofh), ERL_NODE_INC,
+                                             __FILE__, __LINE__);
+                      }
+
+		    //   if (ErtsInArea(ofh->next, oh, oh_size)) {
+			//   Eterm** uptr = (Eterm **) (void *) &ofh->next;
+			//   *uptr += heap_offs; /* Patch the mso chain */
+		    //   }
+            //this may be done in the fix_off_heap function
+              break;
+		  }
+		  
+	      case BIN_MATCHSTATE_SUBTAG:
+                {	
+                    ErlBinMatchState *ms = (ErlBinMatchState*) n_hp;
+                    ErlBinMatchBuffer *mb = &(ms->mb);
+                    Eterm* origptr = &(mb->orig);
+                    ptr = boxed_val(*origptr);
+                    if(ErtsInYoungGen(*origptr, ptr, oh, oh_size)){
+                        val = *ptr;
+                        if (IS_MOVED_BOXED(val)) {
+                            *origptr = val;
+                            mb->base = binary_bytes(val);
+                        } else if(ErtsInArea(ptr, mature, mature_size)){
+                            pushroot(head_ref,end_ref,old_htop);
+                            move_boxed(ptr,val,&old_htop,origptr);
+                            
+                            mb->base = binary_bytes(mb->orig);
+                        }else{
+                            move_boxed(ptr,val,&n_htop,origptr);
+                            mb->base = binary_bytes(mb->orig);
+                        }
+
+                    }else if(ErtsInArea(ptr, oh, oh_size) && !erts_is_literal(*origptr, ptr)){
+                        //can do offset here
+                        mb->orig = offset_ptr(mb->orig, heap_offs);
+                        mb->base = binary_bytes(mb->orig);
+                        
+                    }
+                    break;
+                }
+		        
+            default: break;
+	      }
+		    n_hp += (thing_arityval(gval)+1);
+		// }
+		break;
+	    }
+	    default:
+		n_hp++;
+		break;
+	    }
+	}
+    }
+
+    /*
+     * And also if we have been tenuring, references on the second generation
+     * may point to the old (soon to be deleted) new_heap.
+     */
+
+    if (OLD_HTOP(p) < old_htop)
+	old_htop = sweep_new_heap(OLD_HTOP(p), old_htop, oh2, oh_size2);//oh2 is the new old heap 
+    OLD_HTOP(p) = old_htop;
+    HIGH_WATER(p) = n_htop;
+
+
+    if (MSO(p).first || p->wrt_bins) {
+	sweep_off_heap(p, 0, 0, prev_old_heap,used_old_heap);
+    }
+
+#ifdef HARDDEBUG
+    /*
+     * Go through the old_heap before, and try to find references from the old_heap
+     * into the old new_heap that has just been evacuated and is about to be freed
+     * (as well as looking for reference into heap fragments, of course).
+     */
+    disallow_heap_frag_ref_in_old_heap(p);
+#endif
+
+    copy_erlang_stack(p, n_heap, new_sz);
+
+#ifdef HARDDEBUG
+    disallow_heap_frag_ref_in_heap(p, n_heap, n_htop);
+#endif
+
+    erts_deallocate_young_generation(p);
+
+    HEAP_START(p) = n_heap;
+    HEAP_TOP(p) = n_htop;
+    HEAP_END(p) = n_heap + new_sz;
+
+#ifdef USE_VM_PROBES
+    if (HEAP_SIZE(p) != new_sz && DTRACE_ENABLED(process_heap_grow)) {
+        DTRACE_CHARBUF(pidbuf, DTRACE_TERM_BUF_SIZE);
+        Uint old_sz = HEAP_SIZE(p);
+
+        HEAP_SIZE(p) = new_sz;
+        dtrace_proc_str(p, pidbuf);
+        DTRACE3(process_heap_grow, pidbuf, old_sz, new_sz);
+    }
+#endif
+    HEAP_SIZE(p) = new_sz;
+    
+
+}
+
+
+static void fix_off_heap(Process* p, Sint heap_offs, char* prev_old_heap, Uint old_old_size, char* mature, Uint mature_sz){
+        // struct erl_off_heap_header* ptr;
+        // struct erl_off_heap_header* next_ptr;
+
+        // ptr = MSO(p).first;
+        // if(!ptr){
+        //     return;
+        // }
+        // next_ptr = ptr->next;
+        // if(!next_ptr){
+        //     if(ptr && ErtsInArea((Eterm *)ptr, prev_old_heap, old_old_size))
+        //         ptr = ptr + heap_offs;
+        //     return;
+        // }
+
+        // while(next_ptr){
+        //     if (next_ptr && ErtsInArea((Eterm *)next_ptr, prev_old_heap, old_old_size) ) {
+            
+        //     ptr->next = ptr->next + heap_offs;
+        //     return;
+        //     }
+        //     ptr = ptr->next;
+        //     next_ptr = next_ptr->next;
+        // }
+
+        struct erl_off_heap_header** ptr;
+        struct erl_off_heap_header** next_ptr;
+        struct erl_off_heap_header** bin_ptr;
+        struct erl_off_heap_header** next_bin_ptr;
+
+        ptr = &MSO(p).first;
+        bin_ptr = &(p->wrt_bins);
+
+        
+       
+
+        while((*ptr) && (*ptr)->next){
+            
+            next_ptr = &((*ptr)->next);
+            if(ErtsInArea((Eterm *)(*ptr)->next, mature, mature_sz)){
+                break;
+            }
+            if (ErtsInArea((Eterm *)(*ptr)->next, prev_old_heap, old_old_size)) {
+                //(Eterm*)(*ptr)->next += heap_offs;
+                (*ptr)->next = ((Eterm *)((*ptr)->next)) + heap_offs;
+                break;
+                
+            }
+
+            ptr = &((*ptr)->next);               
+        }
+
+        while((*bin_ptr) && (*bin_ptr)->next){
+            next_bin_ptr = &((*bin_ptr)->next);
+            if(ErtsInArea(next_bin_ptr, mature, mature_sz)){
+                break;
+            }
+             if (next_bin_ptr && ErtsInArea(next_bin_ptr, prev_old_heap, old_old_size)) {
+                    
+                    (*bin_ptr)->next = ((Eterm*)((*bin_ptr)->next)) + heap_offs;
+                    break;
+                    
+                }
+
+                bin_ptr = &((*bin_ptr)->next); 
+            
+            
+        }
+
+
+}
+
+static Uint check_mature_stack(struct Rootnode** mature_stack_ref, Eterm* ptr){
+    struct Rootnode* mature_stack = *mature_stack_ref;
+    struct Rootnode* prev = NULL; // Pointer to the previous node
+
+    while(mature_stack != NULL){
+        if(mature_stack->ptr == ptr){
+            if (prev == NULL) {
+                // If the node is the head of the list
+                *mature_stack_ref = mature_stack->next;
+            } else {
+                // If the node is not the head of the list
+                prev->next = mature_stack->next;
+            }
+            free(mature_stack);
+            return 0;
+        }else{
+            
+             prev = mature_stack;
+            mature_stack = mature_stack->next;
+        }
+    }
+    return 1;
+}
+
+static void traverse_old_stack(struct Rootnode** head, struct Rootnode** end, char * oh, Uint oh_size, Uint* old_bitmap, struct Rootnode** mature_stack_ref){
+
+    struct Rootnode* youngend = NULL;//this is not used, just for the correctness of function: check_cell, check_tuple
+    struct Rootnode* younghead = NULL;
+    Eterm* hp_ptr;
+    Eterm gval;
+    Eterm* ptr;
+
+    Uint numOfTerm;
+    Uint dist = 0;
+    Uint arity = 0;
+    
+
+     while((*head) != NULL){
+
+        
+        hp_ptr = (*head) -> ptr;
+        check_mature_stack(mature_stack_ref, hp_ptr);
         gval = *hp_ptr;
         switch (primary_tag(gval)) {
             
-            case TAG_PRIMARY_BOXED: {//boxed type takes 1 word in the heap
-                
-                ptr = boxed_val(gval);
-                appendNode(&rootend,ptr);
-                
-                break;
+            // case TAG_PRIMARY_BOXED: {//boxed type takes 1 word in the heap
 
+            //     if(ErtsInArea(hp_ptr,oh,oh_size)){
+            //         dist = (char*)hp_ptr - oh;
+            //         dist = dist >> (sizeof(Eterm)<8 ? 2:3);
+            //         setbitmap(old_bitmap,dist,1);
+            //     }
                 
-            }
-            case TAG_PRIMARY_LIST: {
-                //check if the object is marked, if it was, then do not put it in the linked list
-                ptr = list_val(gval);//list_val is the address of the con
-                dist = (char *) ptr - oh;//the unit of dist is byte.
-                dist = dist >> (sizeof(Eterm)<8 ? 2:3);//change the dist's unit to word
-                setbitmap(old_bitmap,dist,2);
+            //     ptr = boxed_val(gval);
+            //     if(ErtsInArea(ptr,oh,oh_size)){
+                   
+            //         appendNode(head, end, ptr);
+            //     }
+            //     break;
+            // }
 
-                //check what the cell points to.
-                //there is no cyclic con cell
-                check_cell(ptr,oh,oh_size,&rootend,NULL);
-                break;
-
-            }
             case TAG_PRIMARY_HEADER: {
                 if (!header_is_thing(gval)) {//it is a tuple
                     //check the arityval in the header
@@ -2529,8 +2953,7 @@ static int major_collection(Process* p, ErlHeapFragment *live_hf_end,
                     setbitmap(old_bitmap,dist,arity+1);
                     
                     //IF WE CHECK OUTGOING edge from every element in the tuple
-                    check_tuple(hp_ptr, oh, oh_size, arity, &rootend, &youngend);
-                    // check_tuple(hp_ptr, oh, oh_size, arity, &rootend, NULL);
+                    check_tuple(hp_ptr, oh, oh_size, arity, head, &younghead, end, &youngend);
                     
                     
                 } else {
@@ -2541,6 +2964,11 @@ static int major_collection(Process* p, ErlHeapFragment *live_hf_end,
                             Eterm* origptr = &(mb->orig);
                             ptr = boxed_val(*origptr);
 
+                            // if(ErtsInArea(ptr,oh,oh_size)){//the pointer is in the old heap
+                             
+                            //     appendNode(head, end, ptr);    
+                            // }
+                            
                             //first check calculate the size of the tagged terms
                             numOfTerm = thing_arityval(gval)+1;
                             //question: the size of term varies on 32- or 64-computer
@@ -2551,43 +2979,299 @@ static int major_collection(Process* p, ErlHeapFragment *live_hf_end,
                             setbitmap(old_bitmap,dist,numOfTerm);
 
                         }else{
-                            numOfTerm = thing_arityval(gval)+1;
+
+                            Uint nelts = 0;//number of erlang terms
+                        
+                        switch ((gval) & _HEADER_SUBTAG_MASK) {
+                            case SUB_BINARY_SUBTAG:
+                                
+                                nelts++;
+                                break;
+                            case MAP_SUBTAG:
+                                if (is_flatmap_header(gval)) nelts+=flatmap_get_size(hp_ptr) + 1;
+                                else nelts += hashmap_bitcount(MAP_HEADER_VAL(gval));
+                            break;
+                            case FUN_SUBTAG: nelts+=((ErlFunThing*)(hp_ptr))->num_free+1; break;
+                            }
+
+                            numOfTerm = thing_arityval(gval)+1+nelts;
                             dist = (char *)hp_ptr - oh;
                             dist = dist >> (sizeof(Eterm)<8 ? 2:3);
                             setbitmap(old_bitmap,dist,numOfTerm);
+
+                            hp_ptr= hp_ptr + thing_arityval(gval);                       
+                            check_tuple(hp_ptr, oh, oh_size, nelts, head, &younghead,end, &youngend);
                         }
                 }
                 
                 break;
             }
-            default:
+            default:{
+                dist = (char *)hp_ptr - oh;
+                dist = dist >> (sizeof(Eterm)<8 ? 2:3);
+                setbitmap(old_bitmap,dist,2);
+
+                Eterm car = CAR(hp_ptr);
+                if (!is_immed(car)) {
+                    Eterm *carp = ptr_val(car);
+                    if(ErtsInArea(carp,oh,oh_size)){//the pointer is in the old heap
+                         
+                        appendNode(head, end,carp);   
+                    }
+                }
+
+                Eterm cdr = CDR(hp_ptr);
+                if (!is_immed(cdr)) {
+                    Eterm *cdrp = ptr_val(cdr);
+                    if(ErtsInArea(cdrp,oh,oh_size)){//the pointer is in the old heap
+                    
+                        appendNode(head, end,cdrp);  
+                    }
+                }
+
                 break;
+            }
         }
 
-        roothead = roothead->next;
+        (*head) = (*head)->next;
     }
     
-    // while(concellHead != NULL){
+}
 
-    //     ptr = concellHead->ptr;
+static void check_mature_area(Eterm* hp, Uint sz, char* area, Uint area_size){
+    while (sz--) {
+	Eterm val = *hp;
+	switch (primary_tag(val)) {
+	  case TAG_PRIMARY_LIST:
+	  case TAG_PRIMARY_BOXED:
+        if(!erts_is_literal(val, ptr_val(val))){
+            ASSERT(ErtsInArea(ptr_val(val), area, area_size));
+        }
+          
+          hp++;
+	      break;
+	  case TAG_PRIMARY_HEADER: {
+	      Uint tari;
 
-    //     dist = (char *)ptr - oh;
-    //     dist = dist >> (sizeof(Eterm)<8 ? 2:3);
-    //     setbitmap(old_bitmap,dist,2);
+	      if (header_is_transparent(val)) {
+		  hp++;
+		  continue;
+	      }
+	      tari = thing_arityval(val);
+	      switch (thing_subtag(val)) {
+	      case REF_SUBTAG:
+		  if (!is_magic_ref_thing(hp))
+		      break;
+	      case REFC_BINARY_SUBTAG:
+	      case FUN_SUBTAG:
+	      case EXTERNAL_PID_SUBTAG:
+	      case EXTERNAL_PORT_SUBTAG:
+	      case EXTERNAL_REF_SUBTAG:
+		  {
+		      struct erl_off_heap_header* oh = (struct erl_off_heap_header*) hp;
+		      
+              ASSERT(!oh->next || ErtsInArea(oh->next, area, area_size));
+		  }
+		  break;
+	      case BIN_MATCHSTATE_SUBTAG:
+		{	
+		  ErlBinMatchState *ms = (ErlBinMatchState*) hp;
+		  ErlBinMatchBuffer *mb = &(ms->mb);
+          if(!erts_is_literal(mb->orig,ptr_val(mb->orig))){
+            ASSERT(ErtsInArea(ptr_val(mb->orig), area, area_size));
+          }
+          
+		}
+		break;
+	      }
+	      sz -= tari;
+	      hp += tari + 1;
+	      break;
+	  }
+	  default:
+	      hp++;
+	      continue;
+	}
+    }
+}
 
+static Uint statistic_old_heap(Uint NumElem, Uint* bitmap){
 
-    //     concellHead = concellHead->next;
+    Uint n = 0;
+    Uint map;
+    for(int i=0;i<NumElem;i++){
+        
+        map = bitmap[i];
+        while(map != 0){
+            // the equality operator == has higher precedence than the bitwise AND operator &. 
+            if((map & 1) == 1){
+                n++;
+            }
+            map = map>>1;
+        }
+    }
+    return n;
 
+}
+
+static int major_collection(Process* p, ErlHeapFragment *live_hf_end,
+		 Uint need, Eterm* objv, int nobj,
+		 Uint ygen_usage, Uint *recl)
+#ifdef DEBUG
+// new code
+{
+
+     /************************************/
+    
+    // char* oh = (char *) OLD_HEAP(p);
+    // Uint oh_size = (char *) OLD_HTOP(p) - oh;//size in byte
+    // Eterm* old_heap = OLD_HEAP(p);
+    // Eterm* old_htop = OLD_HTOP(p);
+
+    // //1 word is 8 bytes in 64-computer; 1 word is 4 bytes in 32-computer
+    // //if the Eterm is 8 bytes, then the oh_size_in_word should be shifed right by 3 bits.(divided by 8)
+    // Uint sizeOfWordInByte = sizeof(Eterm) < 8 ? 2 : 3;
+
+    // //Uint oh_size_in_word = oh_size == 0 ? oh_size : (oh_size/sizeOfWordInByte);
+    // //Uint oh_size_in_word = oh_size == 0 ? oh_size : (oh_size>>sizeOfWordInByte);
+    // Uint remainder_size = oh_size > ((oh_size>>sizeOfWordInByte) << sizeOfWordInByte) ? 1 : 0;
+    // Uint oh_size_in_word = oh_size == 0 ? oh_size : (oh_size>>sizeOfWordInByte) + remainder_size;
+    // //create a bitmap, the length of the bitmap should be corresponded to the size of the used old heap
+    // //all bits in the bitmap are initialize to 0;
+    // Uint bits_per_word = (sizeof(Uint)<<sizeOfWordInByte);
+    // Uint shift_bits = bits_per_word<64 ? 5:6;
+    // Uint NumElem = (oh_size_in_word + bits_per_word - 1) >>shift_bits;
+    
+    
+    // Uint* old_bitmap = (Uint *)calloc(NumElem,sizeof(Uint));
+    // Uint* check_bitmap = (Uint *)calloc(NumElem,sizeof(Uint));
+
+    // //the distance of the object from the heap in the old heap
+    // Uint dist=0;
+    // //the number of terms
+    // Uint numOfTerm;
+
+    // Eterm gval;
+    // Eterm* ptr;
+    // Eterm* hp_ptr;
+
+    // //Uint numberofZeros;
+    Uint size_before, size_after, stack_size;
+    // Eterm* n_heap;
+    // Eterm* n_htop;
+    // Uint arity;
+    
+    
+    Uint new_sz;
+    int adjusted;
+
+    // struct Rootnode* roothead = NULL;
+    // struct Rootnode* rootend = NULL;
+
+    // //younghead: the head of the young stack
+    // struct Rootnode* younghead = NULL;
+    // struct Rootnode* youngend = NULL;//this is using in the check_tuple function, but not in use.
+    // //NumNode is the number of the node in the linkedlist.
+    // struct Rootnode* concellHead = NULL;
+    
+    // findroot(p, live_hf_end, objv, nobj, &roothead, &younghead);
+    
+    
+    // //find the end of the linked list
+    // findRootEnd(&roothead, &rootend);
+    
+    
+    // while(roothead != NULL){
+
+        
+    //     hp_ptr = roothead -> ptr;
+    //     gval = *hp_ptr;
+    //     switch (primary_tag(gval)) {
+            
+    //         case TAG_PRIMARY_BOXED: {//boxed type takes 1 word in the heap
+                
+    //             ptr = boxed_val(gval);
+    //             appendNode(&rootend,ptr);
+                
+    //             break;
+
+                
+    //         }
+    //         case TAG_PRIMARY_LIST: {
+    //             //check if the object is marked, if it was, then do not put it in the linked list
+    //             ptr = list_val(gval);//list_val is the address of the con
+    //             dist = (char *) ptr - oh;//the unit of dist is byte.
+    //             dist = dist >> (sizeof(Eterm)<8 ? 2:3);//change the dist's unit to word
+    //             setbitmap(old_bitmap,dist,2);
+
+    //             //check what the cell points to.
+    //             //there is no cyclic con cell
+    //             check_cell(ptr,oh,oh_size,&rootend,NULL);
+    //             break;
+
+    //         }
+    //         case TAG_PRIMARY_HEADER: {
+    //             if (!header_is_thing(gval)) {//it is a tuple
+    //                 //check the arityval in the header
+                    
+    //                 arity = arityval(gval);
+    //                 dist = (char *)hp_ptr - oh;
+    //                 dist = dist >> (sizeof(Eterm)<8 ? 2:3);
+    //                 setbitmap(old_bitmap,dist,arity+1);
+                    
+    //                 //IF WE CHECK OUTGOING edge from every element in the tuple
+    //                 check_tuple(hp_ptr, oh, oh_size, arity, &rootend, &youngend);
+    //                 // check_tuple(hp_ptr, oh, oh_size, arity, &rootend, NULL);
+                    
+                    
+    //             } else {
+
+    //                     if (header_is_bin_matchstate(gval)) {//binary
+    //                         ErlBinMatchState *ms = (ErlBinMatchState*) hp_ptr;//how the term looks like on the heap
+    //                         ErlBinMatchBuffer *mb = &(ms->mb);
+    //                         Eterm* origptr = &(mb->orig);
+    //                         ptr = boxed_val(*origptr);
+
+    //                         //first check calculate the size of the tagged terms
+    //                         numOfTerm = thing_arityval(gval)+1;
+    //                         //question: the size of term varies on 32- or 64-computer
+    //                         //calculate the distance of ptr from oh, so to know which bit in the bitmap should be set.
+    //                         dist = (char *) ptr - oh;
+    //                         dist = dist >> (sizeof(Eterm)<8 ? 2:3);
+    //                         //set the bits from index dist to index dist+numOfTerm to 0
+    //                         setbitmap(old_bitmap,dist,numOfTerm);
+
+    //                     }else{
+    //                         numOfTerm = thing_arityval(gval)+1;
+    //                         dist = (char *)hp_ptr - oh;
+    //                         dist = dist >> (sizeof(Eterm)<8 ? 2:3);
+    //                         setbitmap(old_bitmap,dist,numOfTerm);
+    //                     }
+    //             }
+                
+    //             break;
+    //         }
+    //         default:
+    //             break;
+    //     }
+
+    //     roothead = roothead->next;
     // }
+    
 
-    printf("bitmap is done");
-    //here the bitmap is done.
-    //check the size of live objects in the old heap
-    Uint live_object_size = live_size(old_bitmap, NumElem);
-    //check old heap
-    check_old_heap(p, old_heap, old_htop, check_bitmap);
+    
+    // //here the bitmap is done.
+    // //check the size of live objects in the old heap
+    // Uint live_object_size = live_size(old_bitmap, NumElem);
+    // //check old heap
+    // check_old_heap(p, old_heap, old_htop, check_bitmap);
 
     /**********************************************/
+
+    //1. do a minoc gc without moving mature objects, but move objects above the high water-mark to a new young heap
+    //2. expand the old heap, get the heap_offs
+    //3. then offset the old heap, mature objects, and new young heap.
+    //4. move mature objects into the old heap
 
 
 
@@ -2595,16 +3279,12 @@ static int major_collection(Process* p, ErlHeapFragment *live_hf_end,
     VERBOSE(DEBUG_SHCOPY, ("[pid=%T] MAJOR GC: %p %p %p %p\n", p->common.id,
                            HEAP_START(p), HEAP_END(p), OLD_HEAP(p), OLD_HEND(p)));
 
-    /*
-     * Do a fullsweep GC. First figure out the size of the heap
-     * to receive all live data.
-     */
 
     size_before = ygen_usage;
     size_before += p->old_htop - p->old_heap;
     stack_size = p->hend - p->stop;
 
-    new_sz = stack_size + size_before + S_RESERVED;
+    new_sz = stack_size + ygen_usage + S_RESERVED;
     new_sz = next_heap_size(p, new_sz, 0);
 
     /*
@@ -2633,46 +3313,169 @@ static int major_collection(Process* p, ErlHeapFragment *live_hf_end,
                 return -2;
     }
 
-    FLAGS(p) &= ~(F_HEAP_GROW|F_NEED_FULLSWEEP);
-    n_htop = n_heap = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP,
-						sizeof(Eterm)*new_sz);
+    //expand the old heap
+    Eterm* mature = p->abandoned_heap ? p->abandoned_heap : p->heap;
+    Uint mature_size = p->high_water - mature;
+    Eterm* prev_old_heap = p->old_heap;
+    Eterm* prev_old_htop = p->old_htop;
+    Uint old_old_size = (prev_old_htop - prev_old_heap)* sizeof(Eterm);
+    Uint used_old_heap = p->old_htop - p->old_heap;
+    Uint prev_remaining_space = p->old_hend - p->old_htop;
+
+    //allocate the new young heap
+    Eterm* new_young_htop;
+    Eterm* new_young_heap;
+    new_young_htop = new_young_heap = (Eterm*) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP,
+					       sizeof(Eterm)*new_sz);
+    
+    if(mature_size !=0 && prev_remaining_space<mature_size)
+    expand_old_heap(p, objv, nobj , mature_size );
+    //after expanding the old heap, the old heap pointers are updated
+
+    Sint heap_offs = p->old_heap - prev_old_heap;
+
+    fix_off_heap(p, heap_offs, (char*)prev_old_heap, old_old_size, (char*)mature, mature_size*sizeof(Eterm));
+
+    // offset mature objects
+    if(mature_size != 0 && prev_remaining_space<mature_size)
+    offset_heap(mature, mature_size, heap_offs, (char*)prev_old_heap, old_old_size);
+   
+    Eterm* mature_start = p->old_htop;
+    Uint whole_size_oh = p->old_htop - p->old_heap;
+
+    struct Rootnode* mature_stack = NULL;
+    struct Rootnode* mature_stack_end = NULL;
+
+    if(heap_offs !=0){
+    move_young_mature(p, new_young_heap,new_young_htop, new_sz, live_hf_end, objv, nobj, (char *)mature, mature_size*sizeof(Eterm), 
+                        prev_old_heap, used_old_heap, &mature_stack, &mature_stack_end);
+    }else{
+        do_minor( p, live_hf_end,
+	 (char *)mature, mature_size*sizeof(Eterm),
+	 new_sz, objv, nobj);
+    }
+    check_mature_area(mature_start, p->old_htop - mature_start, (char*)p->old_heap, (char*)p->old_htop-(char*)p->old_heap);
+    Uint cur_size_oh = p->old_htop - p->old_heap;
+    Uint real_mature_sz = cur_size_oh - whole_size_oh;
+
+   
+
+    // bitmap implementation
+
+    char* oh = (char *) OLD_HEAP(p);
+    Eterm* old_heap = OLD_HEAP(p);
+    Eterm* old_htop = OLD_HTOP(p);
+    Uint oh_size = old_htop - old_heap;
     
 
-    n_htop = full_sweep_heaps(p, live_hf_end, 0, n_heap, n_htop, oh, oh_size,
-                              objv, nobj);
+    //if the Uint is of 8 Bytes, then it is the 64-bit computer, otherwise, it is 32-bit.
+    Uint int_bit = sizeof(Uint) < 8 ? 5 : 6;
+    //check if the oh_size is the multiple of 
+    Uint remainder_size = oh_size > ((oh_size>>int_bit) << int_bit) ? 1 : 0;
+    Uint NumElem = oh_size == 0 ? oh_size : (oh_size>>int_bit) + remainder_size;
+    
+    Uint* old_bitmap = (Uint *)calloc(NumElem,sizeof(Uint));
+
+    //the roothead and rootend are the head and end of the stack that has all the reachable old heap entries
+    struct Rootnode* roothead = NULL;
+    struct Rootnode* rootend = NULL;
+
+    //younghead: the head of the young stack
+    struct Rootnode* younghead = NULL;
+    struct Rootnode* youngend = NULL;//this is using in the check_tuple function, but not in use.
+    // findRootEnd(&roothead, &rootend);
+    // findRootEnd(&younghead, &youngend);
+    //find reachable objects and store them in the stack
+    findroot(p, live_hf_end, objv, nobj, &roothead, &younghead, &rootend, &youngend);
+
+    //find the end of the linked list
+    //findRootEnd(&roothead, &rootend);
+
+    //traverse the linked list
+    traverse_old_stack(&roothead, &rootend, oh, oh_size*sizeof(Eterm), old_bitmap, &mature_stack);
+    
+    Uint old_heap_sz = p->old_htop - p->old_heap;
+
+    Uint live_old = statistic_old_heap(NumElem, old_bitmap);
+    ASSERT(mature_stack==NULL || mature_stack->ptr == NULL);
+
+    ASSERT(old_heap_sz>live_old || old_heap_sz==live_old);
+
+    
+    
+    Uint live_mature = p->old_htop - mature_start;
+    ASSERT(live_mature<live_old || live_mature==live_old);
+    ASSERT(real_mature_sz==live_mature);
+    Uint survived = live_old-live_mature;
+
+    FILE *file = fopen("table.csv", "a");
+    if (file == NULL) {
+        printf("Error opening file!\n");
+        return 1;
+    }
+    if(heap_offs!=0){
+     erts_fprintf(file,"s%T,",p->common.id);
+     fprintf(file, "%lu,%lu,%lu,%lu\n", old_heap_sz, live_old, live_mature, survived);
+    }
+    fclose(file);
+
+    FILE *bitmap_file = fopen("bitmap.csv","a");
+    if (bitmap_file == NULL) {
+        printf("Error opening file!\n");
+        return 1;
+    }
+    if(heap_offs!=0){
+     erts_fprintf(bitmap_file,"s%T,",p->common.id);
+     for(Uint i=0; i<NumElem; i++){
+        if(i!=(NumElem-1))
+        fprintf(bitmap_file,"%lu,",statistic_old_heap(1, &old_bitmap[i]));
+        else
+        fprintf(bitmap_file,"%lu",statistic_old_heap(1, &old_bitmap[i]));
+     }
+     fprintf(bitmap_file, "\n");
+    }
+    fclose(bitmap_file);
+
+  
+
+
+   FLAGS(p) &= ~(F_HEAP_GROW|F_NEED_FULLSWEEP);
+//    Eterm* n_htop;
+//    Eterm* n_heap;
+//     n_htop = n_heap = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP,
+// 						sizeof(Eterm)*new_sz);
+    
+
+//     n_htop = full_sweep_heaps(p, live_hf_end, 0, n_heap, n_htop, oh, oh_size,
+//                               objv, nobj);
     //the old heap is deallocated in the full_sweep_heaps function.
 
-    copy_erlang_stack(p, n_heap, new_sz);
 
-#ifdef HARDDEBUG
-    disallow_heap_frag_ref_in_heap(p, n_heap, n_htop);
-#endif
 
-    erts_deallocate_young_generation(p);
 
-    HEAP_START(p) = n_heap;
-    HEAP_TOP(p) = n_htop;
-    HEAP_END(p) = n_heap + new_sz;
+ 
 
-#ifdef USE_VM_PROBES
-    /* Fire process_heap_grow tracepoint after all heap references have
-     * been updated. This allows to walk the stack. */
-    if (HEAP_SIZE(p) != new_sz && DTRACE_ENABLED(process_heap_grow)) {
-        DTRACE_CHARBUF(pidbuf, DTRACE_TERM_BUF_SIZE);
-        Uint old_sz = HEAP_SIZE(p);
 
-        /* Update the heap size before firing tracepoint */
-        HEAP_SIZE(p) = new_sz;
 
-        dtrace_proc_str(p, pidbuf);
-        DTRACE3(process_heap_grow, pidbuf, old_sz, new_sz);
-    }
-#endif
-    HEAP_SIZE(p) = new_sz;
+// #ifdef USE_VM_PROBES
+//     /* Fire process_heap_grow tracepoint after all heap references have
+//      * been updated. This allows to walk the stack. */
+//     if (HEAP_SIZE(p) != new_sz && DTRACE_ENABLED(process_heap_grow)) {
+//         DTRACE_CHARBUF(pidbuf, DTRACE_TERM_BUF_SIZE);
+//         Uint old_sz = HEAP_SIZE(p);
+
+//         /* Update the heap size before firing tracepoint */
+//         HEAP_SIZE(p) = new_sz;
+
+//         dtrace_proc_str(p, pidbuf);
+//         DTRACE3(process_heap_grow, pidbuf, old_sz, new_sz);
+//     }
+// #endif
+    // HEAP_SIZE(p) = new_sz;
 
     GEN_GCS(p) = 0;
 
-    HIGH_WATER(p) = HEAP_TOP(p);
+    // HIGH_WATER(p) = HEAP_TOP(p);
 
     if (p->sig_qs.flags & FS_ON_HEAP_MSGQ)
 	move_msgs_to_heap(p);
@@ -2687,6 +3490,7 @@ static int major_collection(Process* p, ErlHeapFragment *live_hf_end,
     ErtsGcQuickSanityCheck(p);
 
     return gc_cost(size_after, adjusted ? size_after : 0);
+    
 }
 
 #else
@@ -3140,7 +3944,7 @@ full_sweep_heaps(Process *p,
     n_htop = sweep_heaps(n_heap, n_htop, oh, oh_size);
 
     if (MSO(p).first || p->wrt_bins) {
-	sweep_off_heap(p, 1);
+	sweep_off_heap(p, 1, 0, NULL,0);
     }
 
     
@@ -3181,7 +3985,7 @@ full_sweep_heaps(Process *p,
      another_bitmap = (Uint *)calloc(NumElem,sizeof(Uint));
     
     
-    check_old_heap(p, old_heap, old_htop,another_bitmap);
+    // check_old_heap(p, old_heap, old_htop,another_bitmap);
     
 
     //do comparison between doubleCheckBitmap and old_bitmap.
@@ -4154,7 +4958,7 @@ shrink_writable_bin(ProcBin *pb, Uint leave_unused)
 
 
 static void
-sweep_off_heap(Process *p, int fullsweep)
+sweep_off_heap(Process *p, int fullsweep, Sint heap_offs, Eterm* prev_old_heap, Uint prev_old_heap_sz)
 {
     struct erl_off_heap_header* ptr;
     struct erl_off_heap_header** prev;
@@ -4174,6 +4978,7 @@ sweep_off_heap(Process *p, int fullsweep)
     if (fullsweep == 0) {
 	oheap = (char *) OLD_HEAP(p);
 	oheap_sz = (char *) OLD_HEND(p) - oheap;
+    //oheap_sz = (char *) (OLD_HEAP(p)+ prev_old_heap_sz)- oheap;
     }
 
     prev = &MSO(p).first;
@@ -4182,7 +4987,18 @@ sweep_off_heap(Process *p, int fullsweep)
     /* First part of the list will reside on the (old) new-heap.
      * Keep if moved, otherwise deref.
      */
+
+    
+    
+    
     while (ptr) {
+
+    // if(heap_offs != 0 &&  ErtsInArea(ptr, (char *)prev_old_heap, prev_old_heap_sz) ){
+    //         ptr = ptr + heap_offs;
+    //         prev = &ptr;
+
+    //     }
+
 	if (IS_MOVED_BOXED(ptr->thing_word)) {
 	    ASSERT(!ErtsInArea(ptr, oheap, oheap_sz));
             if (is_external_header(((struct erl_off_heap_header*) boxed_val(ptr->thing_word))->thing_word)) {
@@ -4221,12 +5037,15 @@ sweep_off_heap(Process *p, int fullsweep)
                     erts_node_bookkeep(((ExternalThing*)ptr)->node,
                                        make_boxed(&ptr->thing_word),
                                        ERL_NODE_INC, __FILE__, __LINE__);
-                }
+                }   
 	    }
             prev = &ptr->next;
             ptr = ptr->next;
+
+        
 	}
 	else if (ErtsInArea(ptr, oheap, oheap_sz)) {
+        //when the ptr is in the old heap, we skip.
             /*
              * The rest of the list resides on the old heap and needs no
              * attention during a minor gc.
@@ -4271,6 +5090,7 @@ sweep_off_heap(Process *p, int fullsweep)
                                       make_boxed(&ptr->thing_word));
 	    }
 	    *prev = ptr = ptr->next;
+        
 	}
     }
 
@@ -4288,6 +5108,8 @@ sweep_off_heap(Process *p, int fullsweep)
          * the other terms are of the allowed types.
          */
         while (ptr) {
+          
+
             ASSERT(ErtsInArea(ptr, oheap, oheap_sz));
             ASSERT(!IS_MOVED_BOXED(ptr->thing_word));
             switch (ptr->thing_word) {
@@ -4317,6 +5139,8 @@ sweep_off_heap(Process *p, int fullsweep)
     pb = (ProcBin*) p->wrt_bins;
     prev = &p->wrt_bins;
     while (pb) {
+
+     
         int on_old_heap;
         if (IS_MOVED_BOXED(pb->thing_word)) {
             ASSERT(!ErtsInArea(pb, oheap, oheap_sz));
@@ -4418,6 +5242,7 @@ sweep_off_heap(Process *p, int fullsweep)
         for (pb = (ProcBin *)p->wrt_bins;
              pb != shrink_unresolved_end;
              pb = (ProcBin *)pb->next) {
+
             ASSERT(pb);
             ASSERT(pb->flags == PB_IS_WRITABLE);
             shrink_writable_bin(pb, leave_unused);
@@ -4435,7 +5260,7 @@ sweep_off_heap(Process *p, int fullsweep)
 }
 
 /*
- * Offset pointers into the heap (not stack).
+ * Offset pointers into the heap (not stack).   
  */
 
 static void 
