@@ -1,0 +1,130 @@
+ gc is:
+s<0.10.0>,old heap size:290, used:265, live mature:4, all mature:492, real mature size:4, survived:261,live percentage:91.379311%,survived percentage:90.000000%
+ gc is:
+s<0.0.0>,old heap size:4553, used:3748, live mature:3719, all mature:3735, real mature size:3719, survived:29,live percentage:82.319351%,survived percentage:0.636943%
+ gc is:
+s<0.10.0>,old heap size:757, used:521, live mature:275, all mature:511, real mature size:275, survived:246,live percentage:68.824310%,survived percentage:32.496696%
+ gc is:
+s<0.50.0>,old heap size:12123, used:5317, live mature:1622, all mature:2183, real mature size:1622, survived:3695,live percentage:43.858780%,survived percentage:30.479256%
+ gc is:
+s<0.10.0>,old heap size:2185, used:265, live mature:0, all mature:1594, real mature size:0, survived:265,live percentage:12.128147%,survived percentage:12.128147%
+ gc is:
+s<0.10.0>,old heap size:3702, used:265, live mature:0, all mature:1594, real mature size:0, survived:265,live percentage:7.158293%,survived percentage:7.158293%
+ gc is:
+s<0.50.0>,old heap size:21120, used:7402, live mature:3675, all mature:3708, real mature size:3675, survived:3727,live percentage:35.047348%,survived percentage:17.646780%
+ gc is:
+s<0.66.0>,old heap size:492, used:509, live mature:368, all mature:387, real mature size:368, survived:141,live percentage:103.455284%,survived percentage:28.658537%
+ gc is:
+s<0.66.0>,old heap size:549, used:261, live mature:0, all mature:141, real mature size:0, survived:261,live percentage:47.540985%,survived percentage:47.540985%
+ gc is:
+s<0.10.0>,old heap size:8389, used:265, live mature:0, all mature:5082, real mature size:0, survived:265,live percentage:3.158899%,survived percentage:3.158899%
+ gc is:
+s<0.50.0>,old heap size:35738, used:22020, live mature:10009, all mature:10009, real mature size:10009, survived:12011,live percentage:61.615086%,survived percentage:33.608482%
+ gc is:
+s<0.66.0>,old heap size:825, used:196, live mature:0, all mature:351, real mature size:0, survived:196,live percentage:23.757576%,survived percentage:23.757576%
+ gc is:
+s<0.71.0>,old heap size:135, used:133, live mature:0, all mature:833, real mature size:0, survived:133,live percentage:98.518524%,survived percentage:98.518524%
+ gc is:
+s<0.71.0>,old heap size:1171, used:190, live mature:20, all mature:853, real mature size:20, survived:170,live percentage:16.225449%,survived percentage:14.517507%
+ gc is:
+s<0.53.0>,old heap size:116, used:64, live mature:0, all mature:717, real mature size:0, survived:64,live percentage:55.172413%,survived percentage:55.172413%
+ gc is:
+s<0.71.0>,old heap size:4690, used:3258, live mature:600, all mature:645, real mature size:600, survived:2658,live percentage:69.466949%,survived percentage:56.673771%
+ gc is:
+s<0.71.0>,old heap size:6132, used:2280, live mature:0, all mature:1996, real mature size:0, survived:2280,live percentage:37.181999%,survived percentage:37.181999%
+ gc is:
+s<0.53.0>,old heap size:1079, used:941, live mature:660, all mature:660, real mature size:660, survived:281,live percentage:87.210381%,survived percentage:26.042631%
+ gc is:
+s<0.53.0>,old heap size:1079, used:64, live mature:0, all mature:1084, real mature size:0, survived:64,live percentage:5.931418%,survived percentage:5.931418%
+ gc is:
+s<0.86.0>,old heap size:402, used:138, live mature:0, all mature:210, real mature size:0, survived:138,live percentage:34.328358%,survived percentage:34.328358%
+ gc is:
+s<0.50.0>,old heap size:63309, used:49270, live mature:19859, all mature:19917, real mature size:19859, survived:29411,live percentage:77.824638%,survived percentage:46.456272%
+ gc is:
+s<0.90.0>,old heap size:894, used:699, live mature:383, all mature:669, real mature size:383, survived:316,live percentage:78.187920%,survived percentage:35.346756%
+ gc is:
+s<0.88.0>,old heap size:751, used:630, live mature:197, all mature:244, real mature size:197, survived:433,live percentage:83.888153%,survived percentage:57.656460%
+ gc is:
+s<0.88.0>,old heap size:762, used:630, live mature:11, all mature:726, real mature size:11, survived:619,live percentage:82.677170%,survived percentage:81.233597%
+ gc is:
+s<0.90.0>,old heap size:1631, used:690, live mature:352, all mature:482, real mature size:352, survived:338,live percentage:42.305336%,survived percentage:20.723482%
+ gc is:
+s<0.88.0>,old heap size:1747, used:1609, live mature:380, all mature:383, real mature size:380, survived:1229,live percentage:92.100746%,survived percentage:70.349167%
+ gc is:
+s<0.90.0>,old heap size:4279, used:2168, live mature:999, all mature:999, real mature size:999, survived:1169,live percentage:50.666046%,survived percentage:27.319468%
+ gc is:
+s<0.90.0>,old heap size:6871, used:4751, live mature:923, all mature:1179, real mature size:923, survived:3828,live percentage:69.145683%,survived percentage:55.712414%
+ gc is:
+s<0.88.0>,old heap size:2694, used:2556, live mature:947, all mature:1206, real mature size:947, survived:1609,live percentage:94.877502%,survived percentage:59.725315%
+ gc is:
+s<0.88.0>,old heap size:9179, used:9041, live mature:6485, all mature:7877, real mature size:6485, survived:2556,live percentage:98.496567%,survived percentage:27.846169%
+ gc is:
+s<0.89.0>,old heap size:998, used:925, live mature:0, all mature:7677, real mature size:0, survived:925,live percentage:92.685371%,survived percentage:92.685371%
+ gc is:
+s<0.90.0>,old heap size:9943, used:128, live mature:0, all mature:1778, real mature size:0, survived:128,live percentage:1.287338%,survived percentage:1.287338%
+ gc is:
+s<0.88.0>,old heap size:18526, used:15942, live mature:2328, all mature:2788, real mature size:2328, survived:13614,live percentage:86.052032%,survived percentage:73.485909%
+ gc is:
+s<0.90.0>,old heap size:17874, used:2119, live mature:779, all mature:1041, real mature size:779, survived:1340,live percentage:11.855209%,survived percentage:7.496923%
+ gc is:
+s<0.88.0>,old heap size:29844, used:26946, live mature:3132, all mature:4846, real mature size:3132, survived:23814,live percentage:90.289505%,survived percentage:79.794930%
+ gc is:
+s<0.88.0>,old heap size:46883, used:44007, live mature:1155, all mature:1179, real mature size:1155, survived:42852,live percentage:93.865578%,survived percentage:91.402000%
+ gc is:
+s<0.88.0>,old heap size:76084, used:63242, live mature:1160, all mature:1179, real mature size:1160, survived:62082,live percentage:83.121284%,survived percentage:81.596657%
+ gc is:
+s<0.88.0>,old heap size:121276, used:87765, live mature:589, all mature:862, real mature size:589, survived:87176,live percentage:72.367989%,survived percentage:71.882317%
+ gc is:
+s<0.88.0>,old heap size:197215, used:133803, live mature:1304, all mature:1456, real mature size:1304, survived:132499,live percentage:67.846260%,survived percentage:67.185051%
+ gc is:
+s<0.88.0>,old heap size:323250, used:111251, live mature:5521, all mature:5547, real mature size:5521, survived:105730,live percentage:34.416397%,survived percentage:32.708431%
+ gc is:
+s<0.88.0>,old heap size:516051, used:196576, live mature:11128, all mature:12237, real mature size:11128, survived:185448,live percentage:38.092361%,survived percentage:35.935982%
+ gc is:
+s<0.88.0>,old heap size:834221, used:220406, live mature:4253, all mature:4781, real mature size:4253, survived:216153,live percentage:26.420576%,survived percentage:25.910759%
+ gc is:
+s<0.88.0>,old heap size:1008622, used:239151, live mature:20938, all mature:22445, real mature size:20938, survived:218213,live percentage:23.710667%,survived percentage:21.634766%
+ gc is:
+s<0.88.0>,old heap size:1203509, used:190323, live mature:9272, all mature:9858, real mature size:9272, survived:181051,live percentage:15.814008%,survived percentage:15.043594%
+ gc is:
+s<0.66.0>,old heap size:1413, used:157, live mature:0, all mature:269, real mature size:0, survived:157,live percentage:11.111112%,survived percentage:11.111112%
+ gc is:
+s<0.71.0>,old heap size:11811, used:3460, live mature:3271, all mature:3276, real mature size:3271, survived:189,live percentage:29.294725%,survived percentage:1.600203%
+ gc is:
+s<0.71.0>,old heap size:28621, used:20223, live mature:9259, all mature:9686, real mature size:9259, survived:10964,live percentage:70.657906%,survived percentage:38.307537%
+ gc is:
+s<0.71.0>,old heap size:47202, used:37808, live mature:2476, all mature:3072, real mature size:2476, survived:35332,live percentage:80.098305%,survived percentage:74.852760%
+ gc is:
+s<0.71.0>,old heap size:78482, used:68362, live mature:21791, all mature:22622, real mature size:21791, survived:46571,live percentage:87.105324%,survived percentage:59.339722%
+ gc is:
+s<0.71.0>,old heap size:149670, used:139576, live mature:35534, all mature:35584, real mature size:35534, survived:104042,live percentage:93.255829%,survived percentage:69.514259%
+ gc is:
+s<0.71.0>,old heap size:149670, used:249, live mature:0, all mature:54312, real mature size:0, survived:249,live percentage:0.166366%,survived percentage:0.166366%
+ gc is:
+s<0.50.0>,old heap size:66312, used:52205, live mature:188, all mature:19307, real mature size:188, survived:52017,live percentage:78.726318%,survived percentage:78.442818%
+ gc is:
+s<0.44.0>,old heap size:3298, used:3309, live mature:0, all mature:3410, real mature size:0, survived:3309,live percentage:100.333534%,survived percentage:100.333534%
+ gc is:
+s<0.44.0>,old heap size:3298, used:2776, live mature:0, all mature:9384, real mature size:0, survived:2776,live percentage:84.172226%,survived percentage:84.172226%
+ gc is:
+s<0.97.0>,old heap size:298, used:320, live mature:130, all mature:246, real mature size:130, survived:190,live percentage:107.382545%,survived percentage:63.758392%
+ gc is:
+s<0.77.0>,old heap size:63, used:29, live mature:21, all mature:170, real mature size:21, survived:8,live percentage:46.031746%,survived percentage:12.698414%
+ gc is:
+s<0.125.0>,old heap size:528, used:528, live mature:366, all mature:533, real mature size:366, survived:162,live percentage:100.000000%,survived percentage:30.681818%
+ gc is:
+s<0.125.0>,old heap size:786, used:18, live mature:0, all mature:256, real mature size:0, survived:18,live percentage:2.290076%,survived percentage:2.290076%
+ gc is:
+s<0.97.0>,old heap size:332, used:64, live mature:0, all mature:320, real mature size:0, survived:64,live percentage:19.277107%,survived percentage:19.277107%
+ gc is:
+s<0.172.0>,old heap size:522, used:124, live mature:0, all mature:134, real mature size:0, survived:124,live percentage:23.754789%,survived percentage:23.754789%
+ gc is:
+s<0.172.0>,old heap size:807, used:124, live mature:5, all mature:227, real mature size:5, survived:119,live percentage:15.365551%,survived percentage:14.745973%
+ gc is:
+s<0.172.0>,old heap size:1515, used:124, live mature:0, all mature:134, real mature size:0, survived:124,live percentage:8.184818%,survived percentage:8.184818%
+ gc is:
+s<0.172.0>,old heap size:2390, used:124, live mature:5, all mature:206, real mature size:5, survived:119,live percentage:5.188284%,survived percentage:4.979080%
+ gc is:
+s<0.172.0>,old heap size:4054, used:124, live mature:0, all mature:134, real mature size:0, survived:124,live percentage:3.058707%,survived percentage:3.058707%
+ gc is:
+s<0.172.0>,old heap size:6553, used:119, live mature:0, all mature:230, real mature size:0, survived:119,live percentage:1.815962%,survived percentage:1.815962%

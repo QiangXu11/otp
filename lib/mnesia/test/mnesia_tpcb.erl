@@ -303,7 +303,7 @@ config(replica_test, ReplicaType) ->
      {replica_nodes, Nodes},
      {n_accounts_per_branch, 100},
      {replica_type, ReplicaType},
-     {stop_after, timer:minutes(1)},
+     {stop_after, timer:minutes(5)},
      {report_interval, timer:seconds(10)},
      {reuse_history_id, true}
     ];
@@ -362,7 +362,7 @@ config(conflict_test, ReplicaType) ->
      {n_branches, 1},
      {n_accounts_per_branch, 10},
      {replica_type, ReplicaType},
-     {stop_after, timer:minutes(1)},
+     {stop_after, timer:minutes(5)},
      {report_interval, timer:seconds(10)},
      {reuse_history_id, true}
     ];

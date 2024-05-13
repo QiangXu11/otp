@@ -1115,6 +1115,8 @@ struct process {
     Uint64 bin_old_vheap_sz;	/* Virtual old heap block size for binaries */
     Uint64 bin_old_vheap;	/* Virtual old heap size for binaries */
 
+    Uint64 hacky_old_size; // added for debug
+
     ErtsProcSysTaskQs *sys_task_qs;
     ErtsProcSysTask *dirty_sys_tasks;
 
